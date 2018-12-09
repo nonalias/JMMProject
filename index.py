@@ -120,7 +120,7 @@ def getImage(title):
 	request.add_header("X-Naver-Client-Secret", client_secret)
 	response=urllib.request.urlopen(request)
 	rescode=response.getcode()
-	
+	img_not_found='<Photo>http://ugimoa.com/xeshop/img/no_images.jpg</Photo>'
 	if(rescode==200):
 		response_body=response.read()
 		locinfo=response_body.decode('utf-8')
@@ -133,6 +133,8 @@ def getImage(title):
 			image_information = '<Photo>'+s_link+'</Photo>'
 				#[s_title, s_telephone, s_address, s_roadAddress, s_mapy, s_mapx]
 			return image_information
+		else:
+			return img_not_found
 	#else:
 	#	return jsonify(response)
 	
@@ -375,8 +377,9 @@ def webhook():
 	else:
 		answer = 'error'
 	'''
-	
-	
+	temp=region_kind.split(" ")
+	titles=str(temp[1])
+	print(titles)
 	res={'speech' : str(getImage(titles))+answer}
 	return jsonify(res)
 
