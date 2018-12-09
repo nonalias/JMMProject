@@ -10,8 +10,11 @@ from flask import Flask, request, make_response, jsonify
 import re
 ERROR_MESSAGE = '네트워크 접속에 문제가 발생하였습니다. 잠시 후 다시 시도해주세요.'
 NOT_FOUND_MESSAGE = '가게를 찾지 못하였습니다. 다시 한 번 말씀 해 주세요.'
+GOOD_BYE_MESSAGE = '감사합니다. ^^ 다음에 또 이용해 주세요~'
 URL_OPEN_TIME_OUT = 10
+others=''
 titles=''
+temprdadr=''
 app = Flask(__name__)
 # -----------------------------
 # DB서버와 연동
@@ -30,12 +33,14 @@ cur = conn.cursor()
 # 선호도 받아오는 함수
 # -----------------------------
 def choice_preference(region_kind):
-    answer = region_kind.split("")
+    answer = region_kind.split()
     type = answer[1]
-    store = titles
+    store = titles #여기 봐야됨
+    #store = "함지박"
 
     total = cur.execute("SELECT * FROM CHOICE WHERE CHO_TYPE='%s';" % type)
     choice_count = cur.execute("SELECT * FROM CHOICE WHERE CHO_STORE='%s';" % store)
+    print(choice_count)
     avg = int(choice_count / total * 100)
     print("선택한 %s 맛집 선호도 : " % type + str(avg) + "%")
     conn.commit()
@@ -46,29 +51,37 @@ def choice_preference(region_kind):
 # STORE table에 insert해주는 함수
 # -----------------------------
 def store_insert(region_kind):
-    answer = storeInfo(region_kind)
-    answer.split(":")
-    num = ''
-    name = titles
-    phone = answer[4]
-    rnaddress = s_roadAddress
-    address  = answer[2]
+	answer = storeInfo(region_kind)
+	
+	answer = answer.replace("\n","").replace("🐥","^")
+	answer = re.split('\W+\s', answer)
+	print('###################')
+	print(answer)
+	print('###################')
+	
+	'''
+	num = ''
+	name = titles
+	phone = answer[4]
+	rnaddress = temprdadr
+	address  = answer[2]
 
-    cur.execute("INSERT INTO STORE VALUES('%s','%s','%s','%s','%s');" %(num,name,phone,rnaddress,address))
-    conn.commit()
-    conn.close()
-
+	cur.execute("INSERT INTO STORE VALUES('%s','%s','%s','%s','%s');" %(num,name,phone,rnaddress,address))
+	conn.commit()
+	conn.close()
+'''
 
 # -----------------------------
 # CHOICE table에 insert해주는 함수
 # -----------------------------
 def choice_insert(region_kind):
-    answer = region_kind.split("")
+    answer = region_kind.split()
     loc = answer[0]
-    type = answer[1]
-    store = titles
+    types = answer[1]
+    store = titles #여기도 같음
+    #store = "함지박"
 
-    cur.execute("INSERT INTO CHOICE VALUES('%s','%s','%s');" %(loc,type,store))
+    cur.execute("INSERT INTO CHOICE VALUES('%s','%s','%s');" %(loc,types,store))
     conn.commit()
     conn.close()
 
@@ -76,7 +89,7 @@ def choice_insert(region_kind):
 # -----------------------------
 # POS table에 insert해주는 함수
 # -----------------------------
-def pos_insert(region_kind):
+def pos_insert(pos_x, pos_y):
     num = ''
     pos_x = s_mapx
     pos_y = s_mapy
@@ -89,12 +102,27 @@ def pos_insert(region_kind):
 # -----------------------------
 # Client 가 요구한 STORE table을 select해주는 함수
 # -----------------------------
-def pos_select(region_kind):
-    store = titles
-    cur.execute("SELECT * FROM STORE WHERE STO_NAME=%s" %store)
+def store_select(store):
+    cur.execute("SELECT * FROM STORE WHERE STO_NAME='%s'" %store)
+    rows = cur.fetchall()
+
+    for row in rows:
+        print("%s" %row[1])
+        print("%s" %row[2])
+        print("%s" %row[3])
 
     conn.commit()
     conn.close()
+
+# -----------------------------
+# UTF-8로 Encode하고, 적절하게 문자열로 반환해주는 함수
+# -----------------------------
+def URLEncode(region_or_title):
+    encoded=str(region_or_title.encode('utf-8'))
+    splited=encoded.replace("\\"," ").replace("x","%").replace("\'"," ").split()
+    splited=splited[1:]
+    output="".join(splited)
+    return output
 
 # -----------------------------
 # <b>태그 제거해주는 함수
@@ -147,9 +175,11 @@ def getImage(title):
 	
 def storeInfo(region_kind):
 	global titles
+	global temprdadr
 	client_id = "fechS4lsKMLVwarW0I01"
 	client_secret = "MxwdD119Rv"
-	
+	temp=region_kind.split(" ")
+	region=temp[0]
 	location = region_kind
 	encText = urllib.parse.quote(location)
 
@@ -175,15 +205,29 @@ def storeInfo(region_kind):
 			s_telephone = remove_tag(item[j].get('telephone'))
 			s_address = remove_tag(item[j].get('address'))
 			s_roadAddress = remove_tag(item[j].get('roadAddress'))
+			temprdadr=s_roadAddress
 			s_mapx = remove_tag(item[j].get('mapx'))
 			s_mapy = remove_tag(item[j].get('mapy'))
 			s_description=remove_tag(item[j].get('description'))
 			s_link=remove_tag(item[j].get('link'))
-			store_information = '가게 이름 : '+s_title +'\n주소 : '+s_address+'\n'+s_telephone+'\n'+s_description+'\n'+s_link+'\n\n\n\n정말로 이 가게를 선택하시겠어요?				\n(예/아니오)를 답하여 주세요.'
+			store_information = ''
+			if len(s_title) >0 :
+				store_information += '🐥 가게 이름 : ' + s_title + '\n'
+				if len(s_address) > 0 :
+					store_information += '🐥 주소 : ' + s_address + '\n'
+					if len(s_telephone) > 0 :
+						store_information += '🐥 전화번호 : ' + s_telephone + '\n'
+						if len(s_description) > 0 :
+							store_information += '🐥 요약 : ' + s_description + '\n'
+							if len(s_link) > 0 :
+								store_information += '🐥 사이트 : ' + s_link + '\n'
+			
+			store_information += '🐥 자세히 보기 (🔍버튼을 눌러주세요): https://www.google.co.kr/maps/place/'+URLEncode(region)+'+'+URLEncode(titles)+'\n\n😃이 가게를 선택하시겠어요?\n(예/아니오)로만 답하여 주세요.😃'
 			print(store_information)
 			#[s_title, s_telephone, s_address, s_roadAddress, s_mapy, s_mapx]
 			return store_information
 		else:
+			
 			print(NOT_FOUND_MESSAGE)
 			return NOT_FOUND_MESSAGE
 	else:
@@ -353,22 +397,37 @@ def process_pizza_order(pizza_name, address):
 # ----------------------------------------------------
 @app.route('/', methods=['POST'])
 def webhook():
-	
+	global others
     # --------------------------------
     # 액션 구함
     # --------------------------------
 	req = request.get_json(force=True)
 	action = req['result']['action']
-
     # --------------------------------
     # 액션 처리
     # --------------------------------
 	
 	if action == 'LunchQuery_region_kind':
 		region_kind = req['result']['parameters']['region_kind']
-		
+		others=region_kind
+		answer = get_place(region_kind)
+		if answer!=NOT_FOUND_MESSAGE:	
+			temp=region_kind.split(" ")
+			titles=str(temp[1])
+			store_insert(others)
+			res={'speech' : str(getImage(titles))+answer}
+		else:
+			res={'speech' : NOT_FOUND_MESSAGE }
+	elif action =='LunchQuery_region_kind_selectit':
+		choose_type = req['result']['parameters']['yesEntity']
+		if choose_type=="예":
+			print('################')
+			print(others)
+			print('################')
+			choice_insert(others)
+			res={'speech' : GOOD_BYE_MESSAGE}
+			
 	
-	answer = get_place(region_kind)
 	'''
 	elif action == 'pizza_order':
 		pizza_name = req['result']['parameters']['pizza_type']
@@ -377,10 +436,7 @@ def webhook():
 	else:
 		answer = 'error'
 	'''
-	temp=region_kind.split(" ")
-	titles=str(temp[1])
-	print(titles)
-	res={'speech' : str(getImage(titles))+answer}
+	
 	return jsonify(res)
 
 
