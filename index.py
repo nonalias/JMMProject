@@ -2,7 +2,6 @@ import requests
 import json
 import urllib3
 import urllib
-import crawling
 import pymysql
 import random
 from PIL import ImageFile
@@ -11,6 +10,7 @@ import re
 ERROR_MESSAGE = '네트워크 접속에 문제가 발생하였습니다. 잠시 후 다시 시도해주세요.'
 NOT_FOUND_MESSAGE = '가게를 찾지 못하였습니다. 다시 한 번 말씀 해 주세요.'
 GOOD_BYE_MESSAGE = '감사합니다. ^^ 다음에 또 이용해 주세요~'
+NO_MESSAGE = '다시 고르시려면 점심 뭐 먹지? 등의 말을 입력하여 주세요'
 URL_OPEN_TIME_OUT = 10
 others=''
 titles=''
@@ -30,17 +30,21 @@ conn = pymysql.connect(
 cur = conn.cursor()
 
 # -----------------------------
-# 선호도 받아오는 함수
+# 선호도 받아오는 함수 (query 포함)
 # -----------------------------
 def choice_preference(region_kind):
 	answer = region_kind.split()
 	types = answer[1]
 	store = titles #여기 봐야됨
 	#store = "함지박"
-
-	total = cur.execute("SELECT * FROM CHOICE WHERE CHO_TYPE='%s';" % types)
-	choice_count = cur.execute("SELECT * FROM CHOICE WHERE CHO_STORE='%s' and CHO_LOC='%s';" % (store,answer[0]))
+	query="예"
+	total = cur.execute("SELECT * FROM CHOICE WHERE CHO_TYPE='%s' and CHO_LOC='%s' and CHO_STORE='%s';" % (types,answer[0],store))
+	choice_count = cur.execute("SELECT * FROM CHOICE WHERE CHO_STORE='%s' and CHO_LOC='%s' and CHO_TYPE='%s' and CHO_QUERY='%s';"  % (store,answer[0],types,query))
 	print(choice_count)
+	print(total)
+	print(store)
+	print(answer[0])
+	print(types)
 	try:
 		avg = int(choice_count / total * 100)
 		print("선택한 %s 맛집 선호도 : " % types + str(avg) + "%")
@@ -50,7 +54,24 @@ def choice_preference(region_kind):
 	except ZeroDivisionError as e:
 		print(e)
 
-
+# ------------------------------
+# 선호도 받아오는 함수 (query 미포함)# 지역선호도
+# ------------------------------
+def choice_preference_notquery(region_kind):
+	answer = region_kind.split()
+	types = answer[1]
+	store = titles
+	print(store)
+	total = cur.execute("SELECT * FROM CHOICE WHERE CHO_TYPE='%s' and CHO_LOC='%s';" % (types,answer[0]))
+	choice_count = cur.execute("SELECT * FROM CHOICE WHERE CHO_TYPE='%s' and CHO_LOC='%s' and CHO_STORE='%s';" % (types,answer[0],store))
+	try:
+		avg = int(choice_count / total * 100)
+		print("선택한 %s 맛집 선호도 : " % types + str(avg) + "%")
+		conn.commit()
+		if avg>0:
+			return avg
+	except ZeroDivisionError as e:
+		print(e)
 # -----------------------------
 # STORE table에 insert해주는 함수
 # -----------------------------
@@ -76,32 +97,29 @@ def store_insert(region_kind):
 '''
 
 # -----------------------------
-# CHOICE table에 insert해주는 함수
+# CHOICE table에 insert해주는 함수 (query 포함)
 # -----------------------------
-def choice_insert(region_kind):
-    answer = region_kind.split()
-    loc = answer[0]
-    types = answer[1]
-    store = titles #여기도 같음
-    #store = "함지박"
-
-    cur.execute("INSERT INTO CHOICE VALUES('%s','%s','%s');" %(loc,types,store))
-    conn.commit()
-
-
-# -----------------------------
-# POS table에 insert해주는 함수
-# -----------------------------
-def pos_insert(pos_x, pos_y):
-    num = ''
-    pos_x = s_mapx
-    pos_y = s_mapy
-
-    cur.execute("INSERT INTO POS VALUES('%s','%s','%s');" %(num,pos_x,pos_y))
-    conn.commit()
-    conn.close()
-
-
+def choice_insert(region_kind,weard):
+	answer = region_kind.split()
+	loc = answer[0]
+	types = answer[1]
+	store = titles #여기도 같음
+	#store = "함지박"
+	if(weard):
+		cur.execute("INSERT INTO CHOICE VALUES('%s','%s','%s','%s');" %(loc,types,store,"예"))
+	else:
+		cur.execute("INSERT INTO CHOICE VALUES('%s','%s','%s','%s');" %(loc,types,store,""))
+	conn.commit()
+# ------------------------------------
+# CHOICE table에 insert해주는 함수 (query 미 포함)
+# ------------------------------------
+def choice_insert_notquery(region_kind):
+	answer = region_kind.split()
+	loc = answer[0]
+	types = answer[1]
+	store = titles
+	cur.execute("INSERT INTO CHOICE VALUES('%s','%s','%s');"%(loc,types,store))
+	conn.commit()
 # -----------------------------
 # Client 가 요구한 STORE table을 select해주는 함수
 # -----------------------------
@@ -158,7 +176,10 @@ def getImage(title):
 		json_data = json.loads(locinfo)
 		item = json_data.get('items')
 		if item:
-			j=random.randint(0,len(item))
+			if len(item)==1:
+				j=0
+			else:
+				j=random.randint(0,len(item)-1)
 			s_title = remove_tag(item[j].get('title'))
 			s_link=remove_tag(item[j].get('link'))
 			image_information = '<Photo>'+s_link+'</Photo>'
@@ -185,26 +206,31 @@ def storeInfo(region_kind):
 	region=temp[0]
 	location = region_kind
 	encText = urllib.parse.quote(location)
-
 	store_url = 'https://openapi.naver.com/v1/search/local?query='+encText
 	request = urllib.request.Request(store_url)
 	request.add_header("X-Naver-Client-Id", client_id)
 	request.add_header("X-Naver-Client-Secret", client_secret)
 	response = urllib.request.urlopen(request)
 	rescode = response.getcode()
-	choice_percent=choice_preference(region_kind)
+	
 	if(rescode ==200):
 		response_body = response.read()
 		locinfo = response_body.decode('utf-8')
 
 		json_data = json.loads(locinfo)
 		item = json_data.get('items')
-		
+		print(len(item))
 		
 		if item:
-			j=random.randint(0,len(item)-1)
+			if len(item)==1:
+				j=0
+			else:
+				j=random.randint(0,len(item)-1)
+			print(item[j])
 			s_title = remove_tag(item[j].get('title'))
 			titles=s_title
+			choice_percent=choice_preference_notquery(region_kind)
+			print("storeInfo내의 titles : "+titles)
 			s_telephone = remove_tag(item[j].get('telephone'))
 			s_address = remove_tag(item[j].get('address'))
 			s_roadAddress = remove_tag(item[j].get('roadAddress'))
@@ -225,7 +251,7 @@ def storeInfo(region_kind):
 							if len(s_link) > 0 :
 								store_information += '🐥 사이트 : ' + s_link + '\n'
 			
-			store_information += '🐥 자세히 보기 (🔍버튼을 눌러주세요): https://www.google.co.kr/maps/place/'+URLEncode(region)+'+'+URLEncode(titles)+'\n\n😃이 가게를 선택하시겠어요?\n(예/아니오)로만 답하여 주세요.😃\n(이 가게의 현재 선호도 : '+str(choice_percent)+'%)'
+			store_information += '🐥 자세히 보기 (🔍버튼을 눌러주세요): http://maps.google.com/?q='+URLEncode(region)+'+'+URLEncode(titles)+'\n\n😃이 가게를 선택하시겠어요?\n(예/아니오)로만 답하여 주세요.😃\n(이 가게의 선택 점유율 : '+str(choice_percent)+'%)'
 			print(store_information)
 			#[s_title, s_telephone, s_address, s_roadAddress, s_mapy, s_mapx]
 			return store_information
@@ -350,7 +376,7 @@ def get_answer(text, user_key):
 
 	data_header = {
 	    'Content-Type': 'application/json; charset=utf-8',
-	    'Authorization': 'Bearer eecec293709e4bf3b30396bf4a808876'  
+	    'Authorization': 'Bearer a5bc367b005b4bf08e0c4d3b4b0b8a91'  
         # Dialogflow의 Client access token 입력
 	}
 
@@ -401,34 +427,42 @@ def process_pizza_order(pizza_name, address):
 @app.route('/', methods=['POST'])
 def webhook():
 	global others
+	res={}
     # --------------------------------
     # 액션 구함
     # --------------------------------
 	req = request.get_json(force=True)
 	action = req['result']['action']
+	print(req['result']['resolvedQuery'])
     # --------------------------------
     # 액션 처리
     # --------------------------------
-	
-	if action == 'LunchQuery_region_kind':
-		region_kind = req['result']['parameters']['region_kind']
+	if action == 'FALLBACK':
+		region_kind = req['result']['resolvedQuery']
 		others=region_kind
 		answer = get_place(region_kind)
-		if answer!=NOT_FOUND_MESSAGE:	
-			temp=region_kind.split(" ")
-			titles=str(temp[1])
-			#store_insert(others)
-			res={'speech' : str(getImage(titles))+answer}
+		if answer != NOT_FOUND_MESSAGE:
+			temp = region_kind.split(" ")
+			titles = str(temp[1])
+			res = {'speech' : str(getImage(titles))+answer}
 		else:
-			res={'speech' : NOT_FOUND_MESSAGE }
-	elif action =='LunchQuery_region_kind_selectit':
+			res = {'speech' : NOT_FOUND_MESSAGE}
+	
+	elif action =='selectit':
 		choose_type = req['result']['parameters']['yesEntity']
 		if choose_type=="예":
+			choice_insert_notquery(others)
 			print('################')
-			print(others)
+			print("DB에 입력완료 : "+str(others))
 			print('################')
-			choice_insert(others)
 			res={'speech' : GOOD_BYE_MESSAGE}
+	elif action =='notselect':
+		choose_type = req['result']['parameters']['noEntity']
+		if choose_type=="아니오":
+			print('################')
+			print("\'아니오\' 이므로 DB 입력 안함")
+			print('################')
+			res={'speech' : NO_MESSAGE}
 			
 	
 	'''
