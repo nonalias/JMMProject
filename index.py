@@ -33,18 +33,22 @@ cur = conn.cursor()
 # 선호도 받아오는 함수
 # -----------------------------
 def choice_preference(region_kind):
-    answer = region_kind.split()
-    type = answer[1]
-    store = titles #여기 봐야됨
-    #store = "함지박"
+	answer = region_kind.split()
+	types = answer[1]
+	store = titles #여기 봐야됨
+	#store = "함지박"
 
-    total = cur.execute("SELECT * FROM CHOICE WHERE CHO_TYPE='%s';" % type)
-    choice_count = cur.execute("SELECT * FROM CHOICE WHERE CHO_STORE='%s';" % store)
-    print(choice_count)
-    avg = int(choice_count / total * 100)
-    print("선택한 %s 맛집 선호도 : " % type + str(avg) + "%")
-    conn.commit()
-    conn.close()
+	total = cur.execute("SELECT * FROM CHOICE WHERE CHO_TYPE='%s';" % types)
+	choice_count = cur.execute("SELECT * FROM CHOICE WHERE CHO_STORE='%s' and CHO_LOC='%s';" % (store,answer[0]))
+	print(choice_count)
+	try:
+		avg = int(choice_count / total * 100)
+		print("선택한 %s 맛집 선호도 : " % types + str(avg) + "%")
+		conn.commit()
+		if avg>0:
+			return avg
+	except ZeroDivisionError as e:
+		print(e)
 
 
 # -----------------------------
@@ -83,7 +87,6 @@ def choice_insert(region_kind):
 
     cur.execute("INSERT INTO CHOICE VALUES('%s','%s','%s');" %(loc,types,store))
     conn.commit()
-    conn.close()
 
 
 # -----------------------------
@@ -189,7 +192,7 @@ def storeInfo(region_kind):
 	request.add_header("X-Naver-Client-Secret", client_secret)
 	response = urllib.request.urlopen(request)
 	rescode = response.getcode()
-
+	choice_percent=choice_preference(region_kind)
 	if(rescode ==200):
 		response_body = response.read()
 		locinfo = response_body.decode('utf-8')
@@ -222,7 +225,7 @@ def storeInfo(region_kind):
 							if len(s_link) > 0 :
 								store_information += '🐥 사이트 : ' + s_link + '\n'
 			
-			store_information += '🐥 자세히 보기 (🔍버튼을 눌러주세요): https://www.google.co.kr/maps/place/'+URLEncode(region)+'+'+URLEncode(titles)+'\n\n😃이 가게를 선택하시겠어요?\n(예/아니오)로만 답하여 주세요.😃'
+			store_information += '🐥 자세히 보기 (🔍버튼을 눌러주세요): https://www.google.co.kr/maps/place/'+URLEncode(region)+'+'+URLEncode(titles)+'\n\n😃이 가게를 선택하시겠어요?\n(예/아니오)로만 답하여 주세요.😃\n(이 가게의 현재 선호도 : '+str(choice_percent)+'%)'
 			print(store_information)
 			#[s_title, s_telephone, s_address, s_roadAddress, s_mapy, s_mapx]
 			return store_information
@@ -414,7 +417,7 @@ def webhook():
 		if answer!=NOT_FOUND_MESSAGE:	
 			temp=region_kind.split(" ")
 			titles=str(temp[1])
-			store_insert(others)
+			#store_insert(others)
 			res={'speech' : str(getImage(titles))+answer}
 		else:
 			res={'speech' : NOT_FOUND_MESSAGE }
